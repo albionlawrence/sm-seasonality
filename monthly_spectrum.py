@@ -5,7 +5,7 @@ Created on Fri Feb 26 10:11:59 2021
 
 monthly_spectrum.py lat lon 
 
-Plots along-track SSH power spectrum by calendar month for a given 8 degree square patch.
+Plots along-track SSH power spectrum by calendar month for a given 8 degree square patch centered on lat N lon E.
 Takes data from jason_patch_spectrum_all.py
 
 @author: albionlawrence

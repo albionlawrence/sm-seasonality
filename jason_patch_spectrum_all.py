@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-jason_patch_pectrum_all.py 
+jason_patch_pectrum_all.py lat lon size
 
-Generates (windowed) monthly spectra for all tracks in a patch,
+Generates (windowed) monthly spectra for all tracks in a (size degree)^2
+patch sentered at lat N lon E, also saves 
 record of which tracks are any good, statistics,
 ALSO spatial averages pre-windowing.
 
