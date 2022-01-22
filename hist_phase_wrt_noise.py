@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-hist_4deg_ll_ECCO.py
+hist_phase_wrt_noise.py
 
-Creates stacked histograms of phases WRT phase of mixed layer depth
+Creates stacked histograms of phases WRT phase of noise
 *as computed from ECCO-4 climatology*,
-color coded by log likelihood.
+color coded by log likelihood
 Uses output from jason_reduction_4deg.py
 
 Created on Sat April 24
 
-@author: albionlawrence
+@author: albionlawrence, modifications by joernc
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import scipy.stats as stats
 from scipy.optimize import least_squares
 from scipy.stats import chi2
@@ -44,11 +45,18 @@ mld_amp_map = np.abs(mld_mode1_map)
 num_passes_south = np.ndarray.flatten(num_passes_map[:15,:])
 num_passes_north = np.ndarray.flatten(num_passes_map[15:,:])
 
+noise_mode1_map = np.sum(param_maps[:,:,:,3]*sinusoid1,axis=2)/6
+noise_amp1_map = np.abs(noise_mode1_map)
+noise_phase1_map = np.angle(noise_mode1_map)
+noise_mean_map = np.mean(param_maps[:,:,:,3],axis=2)
+noise_phase_diff = 12*(noise_phase1_map - mld_phase1_map)/(2*np.pi) % 12
+
 slope_mode1_map = np.sum(param_maps[:,:,:,2]*sinusoid1,axis=2)/6
 slope_amp1_map = np.abs(slope_mode1_map)
 slope_phase1_map = np.angle(slope_mode1_map)
 slope_mean_map = np.mean(param_maps[:,:,:,2], axis=2)
 slope_phase_diff = 12*(slope_phase1_map + np.pi - mld_phase1_map)/(2*np.pi) % 12
+slope_vs_noise = 12*(slope_phase1_map + np.pi - noise_phase1_map)/(2*np.pi) % 12
 # slope_phase_diff = np.empty((30,90))
 # slope_phase_diff[:] = np.nan
 # slope_phase_diff[:15,:] = 12*slope_phase1_map[:15,:]/(2*np.pi) % 12
@@ -62,6 +70,7 @@ KE1_phase = np.angle(KE1_mode1_map)
 KE1_phasediff = np.empty((30,90))
 KE1_phasediff[:] = np.nan
 KE1_phasediff = 12*(KE1_phase - mld_phase1_map)/(2*np.pi) % 12
+KE1_vs_noise = 12*(KE1_phase - noise_phase1_map)/(2*np.pi) % 12
 # KE1_phasediff[:15,:] = 12*(KE1_phase[:15,:] - np.pi)/(2*np.pi) % 12
 # KE1_phasediff[15:,:] = 12*(KE1_phase[15:,:])/(2*np.pi) % 12
 #KE1_phasediff_south = np.ndarray.flatten(12*(KE1_phase[:15,:] - np.pi)/(2*np.pi) % 12)
@@ -75,21 +84,12 @@ KE2_phase = np.angle(KE2_mode1_map)
 KE2_phasediff = np.empty((30,90))
 KE2_phasediff[:] = np.nan
 KE2_phasediff = 12*(KE2_phase - mld_phase1_map)/(2*np.pi) % 12
+KE2_vs_noise = 12*(KE2_phase - noise_phase1_map)/(2*np.pi) % 12
 # KE2_phasediff[:15,:] = 12*(KE2_phase[:15,:] - np.pi)/(2*np.pi) % 12
 # KE2_phasediff[15:,:] = 12*(KE2_phase[15:,:])/(2*np.pi) % 12
 #KE2_phasediff = 12*(KE2_phase - mld_phase1_map)/(2*np.pi) % 12
 #KE2_phasediff_south = np.ndarray.flatten(12*(KE2_phase[:15,:] - np.pi)/(2*np.pi) % 12)
 #KE2_phasediff_north = np.ndarray.flatten(12*KE2_phase[15:,:]/(2*np.pi) % 12)
-
-k0_mode1_map = np.sum(param_maps[:,:,:,1]*sinusoid1,axis=2)/6
-k0_amp1_map = np.abs(k0_mode1_map)
-k0_phase_map = np.angle(k0_mode1_map)
-k0_phase_diff = 12*(k0_phase_map - mld_phase1_map)/(2*np.pi) % 12
-
-A_mode1_map = np.sum(param_maps[:,:,:,0]*sinusoid1,axis=2)/6
-A_amp1_map = np.abs(A_mode1_map)
-A_phase_map = np.angle(A_mode1_map)
-A_phase_diff = 12*(A_phase_map - mld_phase1_map)/(2*np.pi) % 12
 
 KE12_phasediff = 12*(KE1_phase - KE2_phase)/(2*np.pi) % 12
 
@@ -97,27 +97,33 @@ filtered_KE1 = np.empty((30,90))
 filtered_KE2 = np.empty((30,90))
 filtered_slope = np.empty((30,90))
 filtered_KE12 = np.empty((30,90))
-filtered_k0 = np.empty((30,90))
-filtered_A = np.empty((30,90))
+filtered_noise = np.empty((30,90))
 filtered_KE1[:] = np.nan
 filtered_KE2[:] = np.nan
 filtered_slope[:] = np.nan
 filtered_KE12[:] = np.nan
-filtered_k0[:] = np.nan
-filtered_A[:] = np.nan
+filtered_noise[:] = np.nan
 
 lowCL_KE1 = np.empty((30,90))
 lowCL_KE2 = np.empty((30,90))
 lowCL_slope = np.empty((30,90))
 lowCL_KE12 = np.empty((30,90))
-lowCL_k0 = np.empty((30,90))
-lowCL_A = np.empty((30,90))
+lowCL_noise = np.empty((390,90))
 lowCL_KE1[:] = np.nan
 lowCL_KE2[:] = np.nan
 lowCL_slope[:] = np.nan
 lowCL_KE12[:] = np.nan
-lowCL_k0[:] = np.nan
-lowCL_A[:] = np.nan
+lowCL_noise[:] = np.nan
+
+likelihood_noise = np.empty((30,90))
+likelihood_noise[:] = np.nan
+
+slope_noise_diff = np.empty((30,90))
+slope_noise_diff[:] = np.nan
+KE2_noise_diff = np.empty((30,90))
+KE2_noise_diff[:] = np.nan
+KE1_noise_diff = np.empty((30,90))
+KE1_noise_diff[:] = np.nan
 
 def no_annual(x):
     """
@@ -132,6 +138,22 @@ def resid_noann(x,data,err):
     return (data - no_annual(x))/err
 
 CL95 = chi2.interval(0.95,2)[1]
+
+#separating out the noise phase by likelihood of annual signal
+for lat_band in range(30):
+    for lon_band in range(90):
+        if np.isnan(noise_amp1_map[lat_band,lon_band]) == True:
+            continue
+        noise = param_maps[lat_band,lon_band,:,3]
+        noise_err = err_maps[lat_band,lon_band,:,3]
+        noiseNA_init = np.array([np.mean(noise),0.,0.,0.,0.,0.,0.,0.,0.,0.])
+        resd_noise = least_squares(resid_noann,noiseNA_init,args=(noise,noise_err))
+        noiseNA_params = resd_noise.x
+        likelihood_noise[lat_band,lon_band] = 2*np.sum(resid_noann(noiseNA_params,noise,noise_err)**2)
+        if likelihood_noise[lat_band,lon_band] > CL95:
+            filtered_noise[lat_band,lon_band] = noise_phase_diff[lat_band,lon_band]
+        else:
+            lowCL_noise[lat_band,lon_band] = noise_phase_diff[lat_band,lon_band]
 
 #separating out slope phase by likelihood of annual signal
 for lat_band in range(30):
@@ -148,50 +170,14 @@ for lat_band in range(30):
             #filtered_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
             #filtered_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
             filtered_slope[lat_band,lon_band] = slope_phase_diff[lat_band,lon_band]
-        elif likelihood_slope <= CL95:
+            if likelihood_noise[lat_band,lon_band] > CL95:
+                slope_noise_diff[lat_band,lon_band] = slope_vs_noise[lat_band,lon_band]
+                #= 12*(slope_phase1_map[lat_band,lon_band] + np.pi - noise_phase1_map[lat_band,lon_band])/(2*np.pi) % 12
+                
+        else:
             #lowCL_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
             #lowCL_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
             lowCL_slope[lat_band,lon_band] = slope_phase_diff[lat_band,lon_band]
-
-#separating out k0 phase by likelihood of annual signal
-for lat_band in range(30):
-    for lon_band in range(90):
-        if np.isnan(k0_amp1_map[lat_band,lon_band]) == True:
-            continue
-        k0 = param_maps[lat_band,lon_band,:,1]
-        k0_err = err_maps[lat_band,lon_band,:,1]
-        k0NA_init = np.array([np.mean(k0), 0., 0., 0., 0., 0., 0., 0., 0., 0.])
-        resd_k0 = least_squares(resid_noann,k0NA_init,args=(k0,k0_err))
-        k0NA_params = resd_k0.x
-        likelihood_k0 = 2*np.sum(resid_noann(k0NA_params,k0,k0_err)**2)
-        if likelihood_k0 > CL95:
-            #filtered_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
-            #filtered_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
-            filtered_k0[lat_band,lon_band] = k0_phase_diff[lat_band,lon_band]
-        elif likelihood_k0 <= CL95:
-            #lowCL_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
-            #lowCL_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
-            lowCL_k0[lat_band,lon_band] = k0_phase_diff[lat_band,lon_band]
-            
-#separating out A phase by likelihood of annual signal
-for lat_band in range(30):
-    for lon_band in range(90):
-        if np.isnan(A_amp1_map[lat_band,lon_band]) == True:
-            continue
-        A = param_maps[lat_band,lon_band,:,1]
-        A_err = err_maps[lat_band,lon_band,:,1]
-        AA_init = np.array([np.mean(A), 0., 0., 0., 0., 0., 0., 0., 0., 0.])
-        resd_A = least_squares(resid_noann,AA_init,args=(A,A_err))
-        AA_params = resd_A.x
-        likelihood_A = 2*np.sum(resid_noann(AA_params,A,A_err)**2)
-        if likelihood_A > CL95:
-            #filtered_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
-            #filtered_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
-            filtered_A[lat_band,lon_band] = A_phase_diff[lat_band,lon_band]
-        elif likelihood_A <= CL95:
-            #lowCL_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
-            #lowCL_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
-            lowCL_A[lat_band,lon_band] = A_phase_diff[lat_band,lon_band]
 
 for lat_band in range(30):
     for lon_band in range(90):
@@ -215,6 +201,8 @@ for lat_band in range(30):
             #filtered_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
             #filtered_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
             filtered_KE1[lat_band,lon_band] = KE1_phasediff[lat_band,lon_band]
+            if likelihood_noise[lat_band,lon_band] > CL95:
+                KE1_noise_diff[lat_band,lon_band] = KE1_vs_noise[lat_band,lon_band]
         else:
             #lowCL_KE1[lat_band,lon_band] = KElo_phasediff[lat_band,lon_band]
             #lowCL_KE2[lat_band,lon_band] = KEhi_phasediff[lat_band,lon_band]
@@ -222,6 +210,9 @@ for lat_band in range(30):
         
         if likelihood_KE2 > CL95:
             filtered_KE2[lat_band,lon_band] = KE2_phasediff[lat_band,lon_band]
+            if likelihood_noise[lat_band,lon_band] > CL95:
+                KE2_noise_diff[lat_band,lon_band] = KE2_vs_noise[lat_band,lon_band]
+                #= 12*(KE2_phase[lat_band,lon_band] - noise_phase1_map[lat_band,lon_band])/(2*np.pi) % 12
         else:
             lowCL_KE2[lat_band,lon_band] = KE2_phasediff[lat_band,lon_band]
             
@@ -229,79 +220,28 @@ for lat_band in range(30):
             filtered_KE12[lat_band,lon_band] = KE12_phasediff[lat_band,lon_band]
         else:
             lowCL_KE12[lat_band,lon_band] = KE12_phasediff[lat_band,lon_band]
-            
-# plt.figure(figsize=(12,18))
 
-# plt.subplot(2,3,1)
-# plt.hist((np.ndarray.flatten(filtered_KE1),np.ndarray.flatten(lowCL_KE1)), align='left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(a) KE1 phase- MLD phase (months)')
-# plt.legend()
+fig, ax = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8, 5.4))
 
-# plt.subplot(2,3,2)
-# plt.hist((np.ndarray.flatten(filtered_KE2),np.ndarray.flatten(lowCL_KE2)), align='left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(b) KE2 phase  - MLD phase (months)')
-# plt.legend()
-
-# plt.subplot(2,3,3)
-# plt.hist((np.ndarray.flatten(filtered_KE12),np.ndarray.flatten(lowCL_KE12)), align='left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(c) KE2 phase - KE1 phase (months)')
-# plt.legend()
-
-# plt.subplot(2,3,4)
-# plt.hist((np.ndarray.flatten(filtered_slope),np.ndarray.flatten(lowCL_slope)), align='left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(d) phase of (-slope) - MLD phase (months)')
-# plt.legend()
-
-# plt.subplot(2,3,5)
-# plt.hist((np.ndarray.flatten(filtered_A),np.ndarray.flatten(lowCL_A)),align = 'left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(e) phase of A - MLD phase (months)')
-# plt.legend()
-
-# plt.subplot(2,3,6)
-# plt.hist((np.ndarray.flatten(filtered_k0),np.ndarray.flatten(lowCL_k0)),align = 'left',bins=12,
-#          label=('$>95\% CL$','$<95\% CL$'))
-# plt.xticks(np.arange(13),months_delay)
-# plt.xlabel('(f) phase of k0 - MLD phase (months)')
-# plt.legend()
-
-fig, ax = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(8, 8))
-
-ax[0,0].hist((np.ndarray.flatten(filtered_KE1), np.ndarray.flatten(lowCL_KE1)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[0,0].set_xlim(-0.1, 12.1)
+ax[0,0].hist(np.ndarray.flatten(filtered_noise), align='mid', bins=np.arange(13))
+ax[0,0].set_xlim(0, 12)
 ax[0,0].set_xticks(range(13))
 ax[0,0].set_xticklabels([i if i%3 == 0 else None for i in range(13)])
-ax[0,0].legend(frameon=False)
-ax[0,0].set_title('KE1 phase $-$ MLD phase (months)')
+ax[0,0].set_title('noise phase $-$ MLD phase (months)')
 
-ax[0,1].hist((np.ndarray.flatten(filtered_KE2), np.ndarray.flatten(lowCL_KE2)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[0,1].set_title('KE2 phase $-$ MLD phase (months)')
+ax[0,1].hist(np.ndarray.flatten(slope_vs_noise), align='mid',bins=np.arange(13))
+ax[0,1].set_title('$-s$ phase $-$ noise phase (months)')
 
-ax[1,0].hist((np.ndarray.flatten(filtered_KE12), np.ndarray.flatten(lowCL_KE12)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[1,0].set_title('KE2 phase $-$ KE1 phase (months)')
+ax[1,0].hist(np.ndarray.flatten(KE2_vs_noise), align='mid',bins=np.arange(13))
+ax[1,0].set_title('KE2 phase $-$ noise phase (months)')
 
-ax[1,1].hist((np.ndarray.flatten(filtered_slope), np.ndarray.flatten(lowCL_slope)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[1,1].set_title('$-s$ phase $-$ MLD phase (months)')
+ax[1,1].hist(np.ndarray.flatten(KE1_vs_noise), align='mid',bins=np.arange(13))
+ax[1,1].set_title('KE1 phase $-$ noise phase (months)')
 
-ax[2,0].hist((np.ndarray.flatten(filtered_A), np.ndarray.flatten(lowCL_A)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[2,0].set_title('$A$ phase $-$ MLD phase (months)')
-
-ax[2,1].hist((np.ndarray.flatten(filtered_k0), np.ndarray.flatten(lowCL_k0)), align='mid', bins=np.arange(13), label=('$>$95% CL', '$<$95% CL'))
-ax[2,1].set_title('$k_0$ phase $-$ MLD phase (months)')
-
-for i in range(6):
+for i in range(4):
     ax[i//2,i%2].set_title("({:s})".format(ascii_lowercase[i]), loc="left")
 
 fig.tight_layout()
-fig.savefig("fig/phase_diff_hist.pdf")
+fig.savefig("fig/phase_diff_noise_hist.pdf")
 
 plt.show()
